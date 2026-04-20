@@ -161,6 +161,17 @@ textarea {
     transform: translateX(2px);
 }
 
+.history-item.is-active {
+    background: linear-gradient(135deg, rgba(15, 118, 110, 0.14), rgba(15, 118, 110, 0.08));
+    border-color: rgba(15, 118, 110, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.08);
+}
+
+.history-item.is-active .history-item-title {
+    color: var(--primary-strong);
+    font-weight: 700;
+}
+
 .history-item-content {
     min-width: 0;
     flex: 1;
@@ -209,6 +220,16 @@ textarea {
     gap: 24px;
 }
 
+.topbar.is-compact {
+    justify-content: flex-end;
+    align-items: center;
+    min-height: 52px;
+}
+
+.topbar-copy.is-hidden {
+    display: none;
+}
+
 .eyebrow {
     display: inline-block;
     padding: 6px 10px;
@@ -226,30 +247,6 @@ textarea {
     font-family: var(--font-display);
     font-size: clamp(1.35rem, 2.2vw, 2rem);
     line-height: 1.2;
-}
-
-.legacy-btn {
-    border: none;
-    border-radius: 999px;
-    padding: 12px 16px;
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    background: rgba(201, 111, 58, 0.12);
-    color: #91471a;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: transform 0.2s ease, background 0.2s ease;
-}
-
-.legacy-btn:hover {
-    transform: translateY(-1px);
-    background: rgba(201, 111, 58, 0.18);
-}
-
-.legacy-btn svg {
-    width: 18px;
-    height: 18px;
 }
 
 .hero-panel {
@@ -421,6 +418,10 @@ textarea {
     word-break: break-word;
 }
 
+.message-content.is-pending {
+    min-width: min(360px, 100%);
+}
+
 .message.user .message-content {
     color: white;
 }
@@ -498,9 +499,62 @@ textarea {
     animation: blink 1.1s step-end infinite;
 }
 
+.assistant-pending {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.assistant-pending-title {
+    font-weight: 700;
+    color: var(--text);
+}
+
+.assistant-pending-subtitle {
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+.assistant-pending-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.assistant-pending-dots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--secondary), #e3a174);
+    opacity: 0.28;
+    animation: pending-pulse 1.2s ease-in-out infinite;
+}
+
+.assistant-pending-dots span:nth-child(2) {
+    animation-delay: 0.16s;
+}
+
+.assistant-pending-dots span:nth-child(3) {
+    animation-delay: 0.32s;
+}
+
 @keyframes blink {
     50% {
         opacity: 0;
+    }
+}
+
+@keyframes pending-pulse {
+    0%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.28;
+    }
+    50% {
+        transform: translateY(-2px);
+        opacity: 1;
     }
 }
 

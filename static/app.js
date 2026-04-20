@@ -1,13 +1,13 @@
 class TripBuddyApp {
     constructor() {
         this.apiBaseUrl = `${window.location.origin}/api`;
-        this.currentMode = "quick";
+        this.currentMode = "standard_search";
         this.sessionId = this.generateSessionId();
         this.isStreaming = false;
         this.currentChatHistory = [];
         this.chatHistories = this.loadChatHistories();
         this.isCurrentChatFromHistory = false;
-        this.currentRouteMeta = null;
+        this.hasInteracted = this.chatHistories.length > 0;
 
         this.initMarkdown();
         this.initializeElements();
@@ -38,8 +38,9 @@ class TripBuddyApp {
 
     initializeElements() {
         this.newChatBtn = document.getElementById("newChatBtn");
-        this.aiOpsSidebarBtn = document.getElementById("aiOpsSidebarBtn");
         this.chatHistoryList = document.getElementById("chatHistoryList");
+        this.topbar = document.getElementById("topbar");
+        this.topbarCopy = document.getElementById("topbarCopy");
         this.heroPanel = document.getElementById("heroPanel");
         this.quickPrompts = document.getElementById("quickPrompts");
         this.chatMessages = document.getElementById("chatMessages");
@@ -57,7 +58,6 @@ class TripBuddyApp {
 
     bindEvents() {
         this.newChatBtn?.addEventListener("click", () => this.newChat());
-        this.aiOpsSidebarBtn?.addEventListener("click", () => this.triggerAIOps());
         this.sendButton?.addEventListener("click", () => this.sendMessage());
 
         this.messageInput?.addEventListener("input", () => this.autoResizeInput());
@@ -130,7 +130,7 @@ class TripBuddyApp {
     }
 
     selectMode(mode) {
-        this.currentMode = mode === "stream" ? "stream" : "quick";
+        this.currentMode = mode === "deep_search" ? "deep_search" : "standard_search";
         this.updateModeLabel();
         this.modeDropdown?.querySelectorAll("[data-mode]").forEach((item) => {
             item.classList.toggle("is-active", item.dataset.mode === this.currentMode);
@@ -139,7 +139,7 @@ class TripBuddyApp {
 
     updateModeLabel() {
         if (!this.currentModeText) return;
-        this.currentModeText.textContent = this.currentMode === "stream" ? "流式回复" : "标准回复";
+        this.currentModeText.textContent = this.currentMode === "deep_search" ? "深度搜索" : "标准搜索";
     }
 
     autoResizeInput() {
@@ -149,18 +149,20 @@ class TripBuddyApp {
     }
 
     refreshEmptyState() {
-        const isEmpty = this.currentChatHistory.length === 0;
-        this.heroPanel?.classList.toggle("is-hidden", !isEmpty);
+        const shouldShowIntro = this.currentChatHistory.length === 0;
+        this.heroPanel?.classList.toggle("is-hidden", !shouldShowIntro);
+        this.topbarCopy?.classList.toggle("is-hidden", !shouldShowIntro);
+        this.topbar?.classList.toggle("is-compact", !shouldShowIntro);
     }
 
     renderChatHistory() {
         if (!this.chatHistoryList) return;
-
         this.chatHistoryList.innerHTML = "";
 
         this.chatHistories.forEach((history) => {
             const item = document.createElement("div");
             item.className = "history-item";
+            item.classList.toggle("is-active", history.id === this.sessionId);
             item.innerHTML = `
                 <div class="history-item-content">
                     <span class="history-item-title">${this.escapeHtml(history.title)}</span>
@@ -244,8 +246,10 @@ class TripBuddyApp {
 
         this.sessionId = historyId;
         this.isCurrentChatFromHistory = true;
+        this.hasInteracted = true;
         this.currentChatHistory = [];
         this.chatMessages.innerHTML = "";
+        this.renderChatHistory();
 
         try {
             const response = await fetch(`${this.apiBaseUrl}/chat/session/${historyId}`);
@@ -260,6 +264,7 @@ class TripBuddyApp {
                         });
                     });
                     this.refreshEmptyState();
+                    this.scrollToBottom(true);
                     return;
                 }
             }
@@ -275,6 +280,7 @@ class TripBuddyApp {
             });
         });
         this.refreshEmptyState();
+        this.scrollToBottom(true);
     }
 
     deleteChatHistory(historyId) {
@@ -300,11 +306,12 @@ class TripBuddyApp {
         this.sessionId = this.generateSessionId();
         this.currentChatHistory = [];
         this.isCurrentChatFromHistory = false;
-        this.currentRouteMeta = null;
+        this.hasInteracted = true;
         this.chatMessages.innerHTML = "";
         this.messageInput.value = "";
         this.autoResizeInput();
         this.refreshEmptyState();
+        this.renderChatHistory();
     }
 
     async sendMessage() {
@@ -312,6 +319,7 @@ class TripBuddyApp {
         if (!question || this.isStreaming) return;
 
         this.closeMenus();
+        this.hasInteracted = true;
         this.refreshEmptyState();
         this.addMessage("user", question);
         this.messageInput.value = "";
@@ -320,25 +328,24 @@ class TripBuddyApp {
         const assistantMessage = this.addMessage("assistant", "", {
             save: true,
             route: null,
-            streaming: true
+            streaming: true,
+            pending: true
         });
+        this.persistCurrentChat();
 
         this.isStreaming = true;
         this.updateSendState();
 
         try {
-            if (this.currentMode === "stream") {
-                await this.sendStreamRequest(question, assistantMessage);
-            } else {
-                await this.sendQuickRequest(question, assistantMessage);
-            }
+            await this.sendStreamRequest(question, assistantMessage);
             this.persistCurrentChat();
         } catch (error) {
             console.error(error);
-            this.updateAssistantMessage(assistantMessage, "抱歉，这次旅行请求处理失败了。\n\n" + error.message, {
-                route: null,
-                done: true
-            });
+            this.updateAssistantMessage(
+                assistantMessage,
+                `抱歉，这次旅行请求处理失败了。\n\n${error.message}`,
+                { route: null, done: true }
+            );
             this.showNotification("请求失败，请稍后再试。", "error");
         } finally {
             this.isStreaming = false;
@@ -351,32 +358,6 @@ class TripBuddyApp {
         this.sendButton.disabled = this.isStreaming;
     }
 
-    async sendQuickRequest(question, assistantMessage) {
-        const response = await fetch(`${this.apiBaseUrl}/chat`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                Id: this.sessionId,
-                Question: question
-            })
-        });
-
-        const payload = await response.json();
-        if (!response.ok || payload.code !== 200 || !payload.data?.success) {
-            throw new Error(payload.data?.errorMessage || "服务器返回异常");
-        }
-
-        const answer = payload.data.answer || "";
-        const route = payload.data.route || null;
-
-        this.updateAssistantMessage(assistantMessage, answer, {
-            route,
-            done: true
-        });
-    }
-
     async sendStreamRequest(question, assistantMessage) {
         const response = await fetch(`${this.apiBaseUrl}/chat_stream`, {
             method: "POST",
@@ -385,7 +366,8 @@ class TripBuddyApp {
             },
             body: JSON.stringify({
                 Id: this.sessionId,
-                Question: question
+                Question: question,
+                conversationMode: this.currentMode
             })
         });
 
@@ -422,43 +404,46 @@ class TripBuddyApp {
                 const raw = line.slice(5).trim();
                 if (!raw) continue;
 
-                try {
-                    const message = JSON.parse(raw);
-                    if (currentEvent !== "message") continue;
+                const message = JSON.parse(raw);
+                if (currentEvent !== "message") continue;
 
-                    if (message.type === "route") {
-                        routeMeta = message.data;
-                        this.updateAssistantMessage(assistantMessage, fullResponse, {
-                            route: routeMeta,
-                            done: false
-                        });
-                    }
+                if (message.type === "route") {
+                    routeMeta = message.data;
+                    this.updateAssistantMessage(assistantMessage, fullResponse, {
+                        route: routeMeta,
+                        done: false
+                    });
+                }
 
-                    if (message.type === "content") {
-                        fullResponse += message.data || "";
-                        this.updateAssistantMessage(assistantMessage, fullResponse, {
-                            route: routeMeta,
-                            done: false
-                        });
-                    }
+                if (message.type === "content") {
+                    fullResponse += message.data || "";
+                    this.updateAssistantMessage(assistantMessage, fullResponse, {
+                        route: routeMeta,
+                        done: false
+                    });
+                }
 
-                    if (message.type === "done") {
-                        const finalData = message.data || {};
-                        fullResponse = finalData.answer || fullResponse;
-                        routeMeta = finalData.route || routeMeta;
-                        this.updateAssistantMessage(assistantMessage, fullResponse, {
-                            route: routeMeta,
-                            done: true
-                        });
+                if (message.type === "done") {
+                    const finalData = message.data || {};
+                    if (finalData.answer) {
+                        if (!fullResponse || finalData.answer.startsWith(fullResponse)) {
+                            fullResponse = finalData.answer;
+                        } else if (
+                            !fullResponse.startsWith(finalData.answer) &&
+                            fullResponse.length < finalData.answer.length * 0.5
+                        ) {
+                            fullResponse = finalData.answer;
+                        }
                     }
+                    routeMeta = finalData.route || routeMeta;
+                    this.updateAssistantMessage(assistantMessage, fullResponse, {
+                        route: routeMeta,
+                        done: true
+                    });
+                }
 
-                    if (message.type === "error") {
-                        throw new Error(message.data || "流式请求失败");
-                    }
-                } catch (error) {
-                    if (error instanceof Error) {
-                        throw error;
-                    }
+                if (message.type === "error") {
+                    throw new Error(message.data || "流式请求失败");
                 }
             }
         }
@@ -493,115 +478,6 @@ class TripBuddyApp {
         }
     }
 
-    async triggerAIOps() {
-        if (this.isStreaming) {
-            this.showNotification("请等当前回复完成后再运行 legacy demo。", "warning");
-            return;
-        }
-
-        this.newChat();
-        this.addMessage("user", "运行 Legacy AIOps Demo，查看旧的诊断流式效果。");
-        const assistantMessage = this.addMessage("assistant", "正在启动 Legacy AIOps Demo...", {
-            save: true,
-            streaming: true
-        });
-
-        this.isStreaming = true;
-        this.updateSendState();
-        this.showOverlay(true, "Legacy AIOps Demo 运行中", "这部分保留给旧的运维场景演示");
-
-        try {
-            const response = await fetch(`${this.apiBaseUrl}/aiops`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    session_id: this.sessionId
-                })
-            });
-
-            if (!response.ok || !response.body) {
-                throw new Error("Legacy AIOps 连接失败");
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder("utf-8");
-            let buffer = "";
-            let fullResponse = "";
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const parts = buffer.split("\n");
-                buffer = parts.pop() || "";
-
-                for (const part of parts) {
-                    const line = part.trimEnd();
-                    if (!line.startsWith("data:")) continue;
-                    const raw = line.slice(5).trim();
-                    if (!raw) continue;
-
-                    const message = JSON.parse(raw);
-
-                    if (message.type === "plan" || message.type === "status" || message.type === "step_complete") {
-                        fullResponse += `\n${message.message || ""}\n`;
-                        this.updateAssistantMessage(assistantMessage, fullResponse.trim(), {
-                            route: {
-                                route_type: "legacy_aiops",
-                                selected_workflow: "legacy_aiops_demo",
-                                intent: "legacy_aiops_demo"
-                            },
-                            done: false
-                        });
-                    }
-
-                    if (message.type === "report") {
-                        fullResponse += `\n\n${message.report || ""}`;
-                        this.updateAssistantMessage(assistantMessage, fullResponse.trim(), {
-                            route: {
-                                route_type: "legacy_aiops",
-                                selected_workflow: "legacy_aiops_demo",
-                                intent: "legacy_aiops_demo"
-                            },
-                            done: false
-                        });
-                    }
-
-                    if (message.type === "complete") {
-                        const report = message.diagnosis?.report || fullResponse;
-                        this.updateAssistantMessage(assistantMessage, report, {
-                            route: {
-                                route_type: "legacy_aiops",
-                                selected_workflow: "legacy_aiops_demo",
-                                intent: "legacy_aiops_demo"
-                            },
-                            done: true
-                        });
-                    }
-
-                    if (message.type === "error") {
-                        throw new Error(message.message || "Legacy AIOps 失败");
-                    }
-                }
-            }
-
-            this.persistCurrentChat();
-        } catch (error) {
-            this.updateAssistantMessage(assistantMessage, `Legacy AIOps Demo 运行失败：${error.message}`, {
-                route: null,
-                done: true
-            });
-            this.showNotification("Legacy AIOps Demo 失败。", "error");
-        } finally {
-            this.isStreaming = false;
-            this.updateSendState();
-            this.showOverlay(false);
-        }
-    }
-
     addMessage(type, content, options = {}) {
         const message = document.createElement("div");
         message.className = `message ${type === "user" ? "user" : "assistant"}`;
@@ -633,7 +509,8 @@ class TripBuddyApp {
         } else {
             this.updateAssistantMessage(message, content, {
                 route: options.route || null,
-                done: !options.streaming
+                done: !options.streaming,
+                pending: options.pending === true
             });
         }
 
@@ -648,7 +525,7 @@ class TripBuddyApp {
         }
 
         this.refreshEmptyState();
-        this.scrollToBottom();
+        this.scrollToBottom(true);
         return message;
     }
 
@@ -656,6 +533,8 @@ class TripBuddyApp {
         const shell = messageElement.querySelector(".message-shell");
         const metaRow = shell.querySelector(".message-meta-row");
         const contentEl = shell.querySelector(".message-content");
+        const normalizedContent = typeof content === "string" ? content : "";
+        const shouldShowPending = options.pending === true || (options.done === false && !normalizedContent.trim());
 
         metaRow.innerHTML = "";
 
@@ -671,22 +550,47 @@ class TripBuddyApp {
             metaRow.appendChild(this.buildPill("meta-pill", options.route.intent));
         }
 
-        if (options.done === false) {
+        contentEl.classList.remove("streaming", "is-pending");
+
+        if (shouldShowPending) {
+            contentEl.classList.add("is-pending");
+            contentEl.innerHTML = this.renderPendingState(options.route);
+        } else if (options.done === false) {
             contentEl.classList.add("streaming");
-            contentEl.textContent = content;
+            contentEl.textContent = normalizedContent;
         } else {
-            contentEl.classList.remove("streaming");
-            contentEl.innerHTML = this.renderMarkdown(content);
+            contentEl.innerHTML = this.renderMarkdown(normalizedContent);
             this.highlightCodeBlocks(contentEl);
         }
 
         const historyIndex = Number(messageElement.dataset.historyIndex);
         if (Number.isInteger(historyIndex) && historyIndex >= 0 && this.currentChatHistory[historyIndex]) {
-            this.currentChatHistory[historyIndex].content = content;
+            this.currentChatHistory[historyIndex].content = normalizedContent;
             this.currentChatHistory[historyIndex].route = options.route || null;
         }
 
-        this.scrollToBottom();
+        this.scrollToBottom(options.done === false || this.isStreaming);
+    }
+
+    renderPendingState(route) {
+        const title = route?.route_type
+            ? `已进入${this.formatRouteType(route.route_type)}`
+            : "正在分析你的旅行问题";
+        const subtitle = route?.selected_workflow
+            ? `准备执行 ${route.selected_workflow}`
+            : "正在识别意图、读取记忆并组织回答";
+
+        return `
+            <div class="assistant-pending">
+                <div class="assistant-pending-title">${this.escapeHtml(title)}</div>
+                <div class="assistant-pending-subtitle">${this.escapeHtml(subtitle)}</div>
+                <div class="assistant-pending-dots" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        `;
     }
 
     buildPill(className, text) {
@@ -734,11 +638,30 @@ class TripBuddyApp {
             : date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
     }
 
-    scrollToBottom() {
-        this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+    isNearBottom() {
+        if (!this.chatMessages) return true;
+        const distance = this.chatMessages.scrollHeight - this.chatMessages.scrollTop - this.chatMessages.clientHeight;
+        return distance < 96;
     }
 
-    showOverlay(show, title = "TripBuddy 正在处理", subtitle = "正在整理路线、预算、记忆和建议，请稍候") {
+    scrollToBottom(force = false) {
+        if (!this.chatMessages) return;
+        if (!force && !this.isNearBottom()) return;
+
+        const applyScroll = () => {
+            this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+        };
+
+        applyScroll();
+        requestAnimationFrame(applyScroll);
+        setTimeout(applyScroll, 0);
+    }
+
+    showOverlay(
+        show,
+        title = "TripBuddy 正在处理",
+        subtitle = "正在分析意图、调用工作流或组建多智能体协作，请稍候"
+    ) {
         if (!this.loadingOverlay) return;
 
         const titleEl = this.loadingOverlay.querySelector(".overlay-title");

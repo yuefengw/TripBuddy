@@ -20,7 +20,7 @@ class ChatRequest(BaseModel):
     )
     conversation_mode: Optional[str] = Field(
         default=None,
-        description="Optional routing hint: knowledge, workflow, multi_agent, plan_execute",
+        description="Optional routing hint: standard_search, deep_search, multi_agent, plan_execute",
         alias="conversationMode",
     )
 
@@ -32,7 +32,7 @@ class ChatRequest(BaseModel):
                 "Question": "帮我做一个 4 天重庆美食行程，预算 3000",
                 "userProfile": {"pace_preference": "慢节奏", "dietary_preferences": ["不吃辣"]},
                 "tripContext": {"destination": "重庆", "duration_days": 4},
-                "conversationMode": None,
+                "conversationMode": "standard_search",
             }
         }
 

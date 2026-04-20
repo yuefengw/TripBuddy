@@ -177,16 +177,15 @@ class TravelMemoryService:
 
     def remember_trip_output(self, session_id: str, answer: str, route: IntentRouteResult) -> None:
         if route.selected_workflow not in {
-            "itinerary_generation_workflow",
-            "destination_recommendation_workflow",
-            "travel_checklist_workflow",
+            "trip_planning_workflow",
+            "trip_replanning_workflow",
         } and route.route_type != "plan_execute":
             return
 
         trip_context = self.get_trip_context(session_id)
         trip_context.current_plan = answer[:2000]
-        if route.route_type == "plan_execute":
-            trip_context.constraints = unique_strings([*trip_context.constraints, "行中重规划"])
+        if route.route_type == "plan_execute" or route.selected_workflow == "trip_replanning_workflow":
+            trip_context.constraints = unique_strings([*trip_context.constraints, "行程已重规划"])
         self.upsert_trip_context(session_id, trip_context)
 
     def clear_session(self, session_id: str) -> bool:

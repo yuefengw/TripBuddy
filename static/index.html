@@ -34,26 +34,20 @@
         </aside>
 
         <main class="main-panel">
-            <header class="topbar">
-                <div class="topbar-copy">
-                    <span class="eyebrow">Travel Planning · Replanning · Memory</span>
-                    <h2>把旅行灵感、行程生成、重规划和偏好记忆放进一个入口</h2>
+            <header class="topbar" id="topbar">
+                <div class="topbar-copy" id="topbarCopy">
+                    <span class="eyebrow">Standard Search · Deep Search · Travel Memory</span>
+                    <h2>把旅行规划、局部重规划、知识问答和深度分析放进一个入口</h2>
                 </div>
-                <button class="legacy-btn" id="aiOpsSidebarBtn">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2L15.5 8.5L22 12L15.5 15.5L12 22L8.5 15.5L2 12L8.5 8.5L12 2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                    </svg>
-                    <span>Legacy AIOps Demo</span>
-                </button>
             </header>
 
             <section class="hero-panel" id="heroPanel">
                 <div class="hero-card">
                     <div class="hero-badge">TripBuddy Orchestrator</div>
-                    <h3>像和一个会规划、会记住你偏好的旅行搭子聊天</h3>
+                    <h3>标准搜索适合高频问题，深度搜索适合复杂约束和多方案分析</h3>
                     <p>
-                        你可以问我目的地推荐、按天行程、预算拆分、出行清单，
-                        也可以把“下雨了怎么办”“航班延误怎么改计划”这种临场问题直接丢给我。
+                        标准搜索会先做语义意图识别，再分流到知识问答、旅行规划 workflow、行程重规划 workflow
+                        或 Plan-and-Execute。深度搜索会直接进入多智能体协作，更适合需要拆任务和综合判断的旅行问题。
                     </p>
                 </div>
 
@@ -61,22 +55,22 @@
                     <button class="prompt-card" data-prompt="6 月第一次去成都适合怎么玩？">
                         <span class="prompt-tag">知识问答</span>
                         <strong>第一次去成都怎么玩</strong>
-                        <span>适合灵感型和攻略咨询型问题</span>
+                        <span>适合轻咨询和单点攻略问题</span>
                     </button>
                     <button class="prompt-card" data-prompt="帮我做一个 4 天重庆美食行程，预算 3000。">
-                        <span class="prompt-tag">固定 Workflow</span>
-                        <strong>生成 4 天重庆美食行程</strong>
-                        <span>直接触发行程工作流</span>
+                        <span class="prompt-tag">旅行规划 Workflow</span>
+                        <strong>生成重庆 4 天美食行程</strong>
+                        <span>标准搜索会自动进入固定规划流程</span>
                     </button>
                     <button class="prompt-card" data-prompt="东京和大阪哪个更适合带 6 岁孩子玩 5 天，预算 1 万，请给两个方案比较。">
-                        <span class="prompt-tag">Multi-Agent</span>
+                        <span class="prompt-tag">深度搜索 / Multi-Agent</span>
                         <strong>比较东京和大阪亲子方案</strong>
-                        <span>适合多约束、多方案对比</span>
+                        <span>适合多约束、多角色分析和方案比较</span>
                     </button>
                     <button class="prompt-card" data-prompt="我后天去杭州，但预报下雨，原本西湖一日游怎么重排？">
-                        <span class="prompt-tag">Plan-and-Execute</span>
+                        <span class="prompt-tag">重规划</span>
                         <strong>遇到下雨时重排行程</strong>
-                        <span>适合行中变化和计划调整</span>
+                        <span>标准搜索会判断走固定重规划或 Plan-and-Execute</span>
                     </button>
                 </div>
             </section>
@@ -115,22 +109,22 @@
                             </div>
                             <div class="mode-wrap">
                                 <button class="mode-btn" id="modeSelectorBtn">
-                                    <span id="currentModeText">标准回复</span>
+                                    <span id="currentModeText">标准搜索</span>
                                     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                         <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                     </svg>
                                 </button>
                                 <div class="menu-panel mode-panel" id="modeDropdown">
-                                    <button class="menu-item is-active" data-mode="quick">
+                                    <button class="menu-item is-active" data-mode="standard_search">
                                         <div>
-                                            <strong>标准回复</strong>
-                                            <span>一次性返回完整结果</span>
+                                            <strong>标准搜索</strong>
+                                            <span>语义路由到知识问答、固定 workflow 或 Plan-and-Execute</span>
                                         </div>
                                     </button>
-                                    <button class="menu-item" data-mode="stream">
+                                    <button class="menu-item" data-mode="deep_search">
                                         <div>
-                                            <strong>流式回复</strong>
-                                            <span>边生成边展示内容和路由信息</span>
+                                            <strong>深度搜索</strong>
+                                            <span>直接进入多智能体协作，适合复杂分析和方案比较</span>
                                         </div>
                                     </button>
                                 </div>
@@ -153,7 +147,7 @@
         <div class="overlay-card">
             <div class="overlay-spinner"></div>
             <div class="overlay-title">TripBuddy 正在处理</div>
-            <div class="overlay-subtitle">正在整理路线、预算、记忆和建议，请稍候</div>
+            <div class="overlay-subtitle">正在分析意图、调用工作流或组建多智能体协作，请稍候</div>
         </div>
     </div>
 
