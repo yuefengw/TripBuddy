@@ -6,6 +6,7 @@ from app.skills.native import (
     BudgetEstimatorSkill,
     ItineraryBuilderSkill,
     KnowledgeRetrievalSkill,
+    LiveSearchSkill,
     PackingChecklistSkill,
     PreferenceMemorySkill,
     TimeQuerySkill,
@@ -20,6 +21,7 @@ async def load_skills(config_path: str = "app/config/skills.yaml") -> SkillRegis
 
     native_skills = [
         KnowledgeRetrievalSkill(),
+        LiveSearchSkill(),
         TimeQuerySkill(),
         TravelKnowledgeSkill(),
         ItineraryBuilderSkill(),
@@ -53,6 +55,7 @@ __all__ = [
     "KnowledgeRetrievalSkill",
     "TimeQuerySkill",
     "TravelKnowledgeSkill",
+    "LiveSearchSkill",
     "ItineraryBuilderSkill",
     "BudgetEstimatorSkill",
     "PackingChecklistSkill",

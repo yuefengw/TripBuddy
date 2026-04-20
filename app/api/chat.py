@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
-from app.models.request import ChatRequest, ClearRequest
+from app.models.request import ChatRequest, ClearRequest, InterruptRequest
 from app.models.response import ApiResponse, SessionInfoResponse
 from app.services.travel_agent_service import travel_agent_service
 
@@ -85,6 +85,11 @@ async def chat_stream(request: ChatRequest):
                         "event": "message",
                         "data": json.dumps({"type": "content", "data": data}, ensure_ascii=False),
                     }
+                elif chunk_type == "status":
+                    yield {
+                        "event": "message",
+                        "data": json.dumps({"type": "status", "data": data}, ensure_ascii=False),
+                    }
                 elif chunk_type == "complete":
                     yield {
                         "event": "message",
@@ -118,6 +123,22 @@ async def clear_session(request: ClearRequest):
         )
     except Exception as exc:
         logger.error(f"Failed to clear session: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/chat/interrupt", response_model=ApiResponse)
+async def interrupt_multi_agent(request: InterruptRequest) -> ApiResponse:
+    """Append a human update to an active deep-search multi-agent run."""
+
+    try:
+        accepted = travel_agent_service.interrupt_multi_agent(request.session_id, request.message)
+        return ApiResponse(
+            status="success" if accepted else "error",
+            message="已追加新条件，主 Agent 将在下一轮响应" if accepted else "当前没有可中断的多智能体任务",
+            data={"accepted": accepted},
+        )
+    except Exception as exc:
+        logger.error(f"Failed to interrupt multi-agent run: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

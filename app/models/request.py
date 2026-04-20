@@ -44,3 +44,13 @@ class ClearRequest(BaseModel):
 
     class Config:
         populate_by_name = True
+
+
+class InterruptRequest(BaseModel):
+    """Interrupt request for an active multi-agent run."""
+
+    session_id: str = Field(..., description="Session ID", alias="sessionId")
+    message: str = Field(..., description="Additional user condition", alias="message")
+
+    class Config:
+        populate_by_name = True

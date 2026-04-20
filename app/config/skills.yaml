@@ -1,6 +1,6 @@
 skills:
   - name: knowledge_retrieval
-    description: 从向量知识库检索通用旅行资料
+    description: Shared vector knowledge retrieval
     enabled: true
     mcp_server: null
     metadata:
@@ -8,7 +8,7 @@ skills:
       priority: high
 
   - name: time_query
-    description: 查询当前时间
+    description: Current time query tool
     enabled: true
     mcp_server: null
     metadata:
@@ -16,15 +16,23 @@ skills:
       priority: medium
 
   - name: travel_knowledge_skill
-    description: 旅行知识问答与攻略检索
+    description: Travel knowledge and destination Q&A
     enabled: true
     mcp_server: null
     metadata:
       category: travel
       priority: high
 
+  - name: live_search_skill
+    description: SerpAPI and Firecrawl live web search
+    enabled: true
+    mcp_server: null
+    metadata:
+      category: live_web
+      priority: high
+
   - name: itinerary_builder_skill
-    description: 行程模板生成
+    description: Itinerary planning helper tools
     enabled: true
     mcp_server: null
     metadata:
@@ -32,7 +40,7 @@ skills:
       priority: high
 
   - name: budget_estimator_skill
-    description: 预算估算
+    description: Budget estimation tools
     enabled: true
     mcp_server: null
     metadata:
@@ -40,7 +48,7 @@ skills:
       priority: high
 
   - name: packing_checklist_skill
-    description: 出行清单生成
+    description: Packing and preparation checklist tools
     enabled: true
     mcp_server: null
     metadata:
@@ -48,7 +56,7 @@ skills:
       priority: high
 
   - name: preference_memory_skill
-    description: 偏好记忆读取
+    description: Preference memory lookup
     enabled: true
     mcp_server: null
     metadata:
@@ -56,7 +64,7 @@ skills:
       priority: medium
 
   - name: trip_replan_skill
-    description: 行中重规划建议生成
+    description: Trip re-planning helper tools
     enabled: true
     mcp_server: null
     metadata:
@@ -64,7 +72,7 @@ skills:
       priority: high
 
   - name: travel_live_support
-    description: 通过 MCP 获取模拟天气、汇率、签证和 POI 信息
+    description: MCP travel weather, FX, visa, and POI tools
     enabled: true
     mcp_server: travel
     metadata:
@@ -72,7 +80,7 @@ skills:
       priority: medium
 
   - name: log_query
-    description: AIOps 日志查询工具
+    description: Legacy AIOps log query tools
     enabled: false
     mcp_server: cls
     metadata:
@@ -80,7 +88,7 @@ skills:
       priority: low
 
   - name: monitor_query
-    description: AIOps 监控查询工具
+    description: Legacy AIOps monitoring query tools
     enabled: false
     mcp_server: monitor
     metadata:

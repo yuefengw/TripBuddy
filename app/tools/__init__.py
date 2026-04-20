@@ -1,6 +1,7 @@
 """Shared tool exports used by agents and skills."""
 
 from app.tools.knowledge_tool import retrieve_knowledge
+from app.tools.live_search_tools import scrape_web_page, search_web_live
 from app.tools.time_tool import get_current_time
 from app.tools.travel_tools import (
     build_itinerary_outline,
@@ -12,6 +13,8 @@ from app.tools.travel_tools import (
 
 __all__ = [
     "retrieve_knowledge",
+    "search_web_live",
+    "scrape_web_page",
     "get_current_time",
     "estimate_trip_budget",
     "build_itinerary_outline",

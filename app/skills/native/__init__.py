@@ -5,6 +5,7 @@ from app.skills.native.time import TimeQuerySkill
 from app.skills.native.travel import (
     BudgetEstimatorSkill,
     ItineraryBuilderSkill,
+    LiveSearchSkill,
     PackingChecklistSkill,
     PreferenceMemorySkill,
     TravelKnowledgeSkill,
@@ -15,6 +16,7 @@ __all__ = [
     "KnowledgeRetrievalSkill",
     "TimeQuerySkill",
     "TravelKnowledgeSkill",
+    "LiveSearchSkill",
     "ItineraryBuilderSkill",
     "BudgetEstimatorSkill",
     "PackingChecklistSkill",

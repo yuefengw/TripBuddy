@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, Optional
 
@@ -13,6 +14,7 @@ from app.services.travel_llm_service import travel_llm_service
 from app.services.travel_memory_service import travel_memory_service
 from app.services.travel_multi_agent_service import travel_multi_agent_service
 from app.services.travel_plan_execute_service import travel_plan_execute_service
+from app.services.travel_utils import chunk_text
 from app.services.travel_workflow_service import travel_workflow_service
 from app.tools import retrieve_knowledge
 
@@ -88,6 +90,7 @@ class TravelAgentService:
             user_profile=user_profile,
             trip_context=trip_context,
             conversation_mode=conversation_mode,
+            defer_multi_agent=True,
         )
 
         yield {
@@ -100,8 +103,16 @@ class TravelAgentService:
             },
         }
 
-        collected_chunks: list[str] = []
-        async for chunk in travel_llm_service.stream_final_answer(
+        if prepared.route.route_type == "multi_agent":
+            async for item in self._stream_multi_agent(
+                question=question,
+                session_id=session_id,
+                prepared=prepared,
+            ):
+                yield item
+            return
+
+        answer, final_metadata = await travel_llm_service.generate_final_answer(
             question=question,
             route=prepared.route,
             user_profile=prepared.user_profile,
@@ -110,24 +121,15 @@ class TravelAgentService:
             draft=prepared.draft,
             knowledge_context=prepared.knowledge_context,
             metadata=prepared.metadata,
-        ):
-            collected_chunks.append(chunk)
+        )
+        for chunk in chunk_text(answer):
             yield {"type": "content", "data": chunk}
 
-        answer = "".join(collected_chunks).strip() or prepared.draft
         travel_memory_service.append_turn(session_id, question, answer, prepared.route)
         travel_memory_service.remember_trip_output(session_id, answer, prepared.route)
 
         latest_profile = travel_memory_service.get_user_profile(session_id)
         latest_trip = travel_memory_service.get_trip_context(session_id)
-        final_metadata = dict(prepared.metadata)
-        final_metadata.setdefault("llm_enabled", travel_llm_service.is_available())
-        final_metadata.setdefault(
-            "generation_mode",
-            "llm_stream" if travel_llm_service.is_available() else "template_fallback",
-        )
-        final_metadata.setdefault("llm_used", travel_llm_service.is_available())
-
         yield {
             "type": "complete",
             "data": {
@@ -145,6 +147,9 @@ class TravelAgentService:
     def clear_session(self, session_id: str) -> bool:
         return travel_memory_service.clear_session(session_id)
 
+    def interrupt_multi_agent(self, session_id: str, message: str) -> bool:
+        return travel_multi_agent_service.submit_human_update(session_id, message)
+
     async def _prepare_request(
         self,
         *,
@@ -153,6 +158,7 @@ class TravelAgentService:
         user_profile: Optional[Dict[str, Any]],
         trip_context: Optional[Dict[str, Any]],
         conversation_mode: Optional[str],
+        defer_multi_agent: bool = False,
     ) -> PreparedTravelRequest:
         travel_memory_service.merge_memories(
             session_id, user_profile=user_profile, trip_context=trip_context
@@ -189,10 +195,16 @@ class TravelAgentService:
             metadata.update(workflow_result.metadata)
             knowledge_context = self._retrieve_knowledge_context(question)
         elif route.route_type == "multi_agent":
-            draft, multi_metadata = await travel_multi_agent_service.run(
-                question, learned_profile, learned_trip
-            )
-            metadata.update(multi_metadata)
+            if defer_multi_agent:
+                draft = ""
+            else:
+                draft, multi_metadata = await travel_multi_agent_service.run(
+                    session_id=session_id,
+                    question=question,
+                    user_profile=learned_profile,
+                    trip_context=learned_trip,
+                )
+                metadata.update(multi_metadata)
             knowledge_context = self._retrieve_knowledge_context(question)
         else:
             draft, plan_metadata = await travel_plan_execute_service.run(
@@ -211,6 +223,76 @@ class TravelAgentService:
             metadata=metadata,
             knowledge_context=knowledge_context,
         )
+
+    async def _stream_multi_agent(
+        self,
+        *,
+        question: str,
+        session_id: str,
+        prepared: PreparedTravelRequest,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        status_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
+
+        async def emit_status(message: str) -> None:
+            await status_queue.put({"type": "status", "data": message})
+
+        async def execute_multi_agent() -> tuple[str, Dict[str, Any]]:
+            return await travel_multi_agent_service.run(
+                session_id=session_id,
+                question=question,
+                user_profile=prepared.user_profile,
+                trip_context=prepared.trip_context,
+                on_status=emit_status,
+            )
+
+        task = asyncio.create_task(execute_multi_agent())
+
+        try:
+            while not task.done():
+                try:
+                    item = await asyncio.wait_for(status_queue.get(), timeout=0.25)
+                    yield item
+                except asyncio.TimeoutError:
+                    continue
+
+            while not status_queue.empty():
+                yield await status_queue.get()
+
+            draft, multi_metadata = await task
+        except Exception:
+            task.cancel()
+            raise
+
+        metadata = dict(prepared.metadata)
+        metadata.update(multi_metadata)
+        answer, final_metadata = await travel_llm_service.generate_final_answer(
+            question=question,
+            route=prepared.route,
+            user_profile=prepared.user_profile,
+            trip_context=prepared.trip_context,
+            session_history=prepared.session_history,
+            draft=draft,
+            knowledge_context=prepared.knowledge_context,
+            metadata=metadata,
+        )
+        for chunk in chunk_text(answer):
+            yield {"type": "content", "data": chunk}
+
+        travel_memory_service.append_turn(session_id, question, answer, prepared.route)
+        travel_memory_service.remember_trip_output(session_id, answer, prepared.route)
+
+        latest_profile = travel_memory_service.get_user_profile(session_id)
+        latest_trip = travel_memory_service.get_trip_context(session_id)
+        yield {
+            "type": "complete",
+            "data": {
+                "answer": answer,
+                "route": prepared.route.model_dump(),
+                "trip_context": latest_trip.model_dump(),
+                "user_profile": latest_profile.model_dump(),
+                "metadata": final_metadata,
+            },
+        }
 
     @staticmethod
     def _retrieve_knowledge_context(question: str) -> str:

@@ -160,18 +160,29 @@ class TravelMemoryService:
     def append_turn(
         self, session_id: str, question: str, answer: str, route: IntentRouteResult
     ) -> None:
+        self.append_message(session_id, "user", question, route)
+        self.append_message(session_id, "assistant", answer, route)
+
+    def append_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        route: IntentRouteResult | None = None,
+        *,
+        intent: str | None = None,
+        route_type: str | None = None,
+    ) -> None:
         data = self._read_store()
         session_entries = data.setdefault("sessions", {}).setdefault(session_id, [])
-
-        for role, content in (("user", question), ("assistant", answer)):
-            entry = SessionHistoryEntry(
-                role=role,
-                content=content,
-                timestamp=datetime.utcnow().isoformat(),
-                route_type=route.route_type,
-                intent=route.intent,
-            )
-            session_entries.append(entry.model_dump())
+        entry = SessionHistoryEntry(
+            role=role,  # type: ignore[arg-type]
+            content=content,
+            timestamp=datetime.utcnow().isoformat(),
+            route_type=route.route_type if route else route_type,
+            intent=route.intent if route else intent,
+        )
+        session_entries.append(entry.model_dump())
 
         self._write_store(data)
 

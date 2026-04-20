@@ -4,28 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SuperBizAgent (in directory TripBuddy) is an intelligent business agent system built with FastAPI, LangChain, and LangGraph. It supports RAG-based chat and AIOps automated fault diagnosis using a Plan-Execute-Replan pattern. The system integrates with Milvus vector database and external tools via MCP (Model Context Protocol).
+TripBuddy is a travel planning and re-planning agent with two interaction modes:
+- **Standard Search**: LLM-driven intent classification routing to knowledge Q&A, fixed workflows, or Plan-and-Execute
+- **Deep Search**: Multi-agent collaboration for complex multi-constraint analysis
+
+The system uses unified routing, layered memory management, and MCP-integrated tools.
 
 ## Development Commands
 
 ### Environment Setup
 ```bash
-# Install dependencies (using uv - recommended)
 uv venv
 source .venv/bin/activate  # Linux/macOS
 # or: .venv\Scripts\activate  # Windows
 uv pip install -e .
-
-# Install with dev dependencies
 uv pip install -e ".[dev]"
 ```
 
 ### Running the Application
 ```bash
-# Start all services (MCP + FastAPI) - Linux/macOS
+# Start all services (MCP + FastAPI)
 make start
 
-# Windows - use batch scripts
+# Windows
 .\start-windows.bat
 
 # Development mode with hot reload
@@ -37,9 +38,9 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 9900
 
 ### Code Quality
 ```bash
-make format    # Format code with ruff/black
-make lint      # Lint with ruff
-make fix       # Auto-fix linting issues
+make format      # Format code with ruff/black
+make lint        # Lint with ruff
+make fix         # Auto-fix linting issues
 make type-check  # Type check with mypy
 ```
 
@@ -54,60 +55,83 @@ pytest tests/ -k "test_name"  # Run tests matching pattern
 ### Docker Services
 ```bash
 make up      # Start Milvus containers
-make down     # Stop Milvus containers
-make status   # Check container status
+make down    # Stop Milvus containers
+make status  # Check container status
 ```
 
 ## Architecture
 
+### Intent Routing System
+
+Requests flow through `TravelAgentService` (`app/services/travel_agent_service.py`):
+
+1. **Intent Classification** (`travel_intent_service.py`): LLM outputs structured intent → `route.route_type`
+2. **Route Types**:
+   - `knowledge` → Knowledge Q&A via vector retrieval
+   - `workflow` → Fixed SOP workflows (`trip_planning_workflow`, `trip_replanning_workflow`)
+   - `multi_agent` → Multi-role agent collaboration (Lead Planner, Destination Researcher, etc.)
+   - `plan_execute` → Plan-Execute-Replan pattern for complex dependencies
+
 ### Core Layers
 
-1. **API Layer** (`app/api/`) - FastAPI route handlers
-   - `chat.py` - RAG chat endpoints (standard + streaming)
-   - `aiops.py` - AIOps diagnosis endpoints
+1. **API Layer** (`app/api/`)
+   - `chat.py` - `/api/chat`, `/api/chat_stream` (unified travel chat)
    - `file.py` - Document upload/indexing
    - `health.py` - Health checks
 
-2. **Agent Layer** (`app/agent/`) - Agent implementations
-   - `mcp_client.py` - Global MCP client singleton using `langchain-mcp-adapters` with retry interceptor
-   - `aiops/planner.py` - Plan generation (uses LLM + retrieves knowledge from vector store)
-   - `aiops/executor.py` - Tool execution
-   - `aiops/replanner.py` - Replanning logic
-   - `aiops/state.py` - `PlanExecuteState` TypedDict for LangGraph
+2. **Services Layer** (`app/services/`)
+   - `travel_agent_service.py` - Orchestration entry point
+   - `travel_intent_service.py` - Intent classification via LLM
+   - `travel_llm_service.py` - LLM invocation (DashScope/qwen)
+   - `travel_workflow_service.py` - Fixed workflow execution
+   - `travel_multi_agent_service.py` - Multi-agent collaboration
+   - `travel_plan_execute_service.py` - Plan-Execute-Replan orchestration
+   - `travel_memory_service.py` - Session/memory management
+   - `vector_*_service.py` - Milvus operations
 
-3. **Services Layer** (`app/services/`) - Business logic
-   - `rag_agent_service.py` - LangGraph-based RAG agent with streaming, uses `ChatQwen` from `langchain_qwq`
-   - `aiops_service.py` - Plan-Execute-Replan workflow orchestration via LangGraph `StateGraph`
-   - `vector_*_service.py` - Vector database operations (embedding, indexing, search, store management)
+3. **Skills Layer** (`app/skills/`)
+   - Native skills: travel operations, knowledge retrieval, time
+   - MCP skills: travel_server integration
+   - Skill registry (`registry.py`) loads all skills at startup
 
-4. **Tools Layer** (`app/tools/`) - Agent tools
-   - `knowledge_tool.py` - `retrieve_knowledge` tool using `@tool(response_format="content_and_artifact")` decorator
-   - `time_tool.py` - `get_current_time` tool
+4. **Agent Layer** (`app/agent/`)
+   - `mcp_client.py` - Global MCP client singleton with retry interceptor
+   - `aiops/` - Legacy AIOps demo (planner, executor, replanner, state)
 
-### Key Patterns
+5. **Tools Layer** (`app/tools/`)
+   - `knowledge_tool.py` - Vector retrieval with `@tool(response_format="content_and_artifact")`
+   - `time_tool.py` - Current time tool
+   - `travel_tools.py` - Trip-related tools
 
-**MCP Integration**: The `get_mcp_client_with_retry()` function returns a singleton `MultiServerMCPClient` from `langchain-mcp-adapters`. It wraps tool calls with a retry interceptor using exponential backoff. MCP servers are configured via `app/config.py` (`mcp_servers` property).
+### Memory Architecture
 
-**LangGraph Workflows**: Both RAG and AIOps use LangGraph:
-- RAG: `create_agent()` with `MemorySaver` checkpointer for session history
-- AIOps: `StateGraph` with Plan→Execute→Replan nodes and conditional edges
+Three-layer memory (`travel_memory_service.py`):
+- **Short-term**: Current session conversation history
+- **User Profile**: Budget, travel style, dietary restrictions, accommodation preferences
+- **Trip Context**: Destination, days, must-do items, current plan, constraints
 
-**Vector Store**: Uses `langchain-milvus`. Documents are chunked (configurable size/overlap), embedded with DashScope's `text-embedding-v4`, and stored in Milvus.
+### MCP Integration
 
-### External Dependencies
+`get_mcp_client_with_retry()` in `mcp_client.py` returns a singleton `MultiServerMCPClient`. Three servers configured:
+- `travel` - Travel operations (primary)
+- `cls`, `monitor` - Legacy AIOps demo
 
-- **LLM**: DashScope (Alibaba Cloud) - configured via `DASHSCOPE_API_KEY` and `DASHSCOPE_API_BASE`
-- **Vector DB**: Milvus (Docker-based, see `vector-database.yml`)
-- **MCP Servers**: `mcp_servers/cls_server.py` (log queries) and `mcp_servers/monitor_server.py` (monitoring data)
+### Vector Store
 
-### Configuration
+Uses `langchain-milvus`. Documents chunked (configurable `chunk_max_size`/`chunk_overlap`), embedded via DashScope `text-embedding-v4`.
 
-All settings in `app/config.py` (Pydantic `BaseSettings`) loaded from `.env`:
-- `dashscope_api_key`, `dashscope_model`, `dashscope_embedding_model`
-- `milvus_host`, `milvus_port`
-- `rag_top_k`, `chunk_max_size`, `chunk_overlap`
-- `mcp_cls_url`, `mcp_monitor_url`
+## Configuration
+
+All settings in `app/config.py` (Pydantic `BaseSettings`) from `.env`:
+- DashScope: `dashscope_api_key`, `dashscope_model`, `dashscope_embedding_model`
+- Milvus: `milvus_host`, `milvus_port`
+- RAG: `rag_top_k`, `chunk_max_size`, `chunk_overlap`
+- MCP: `mcp_travel_url`, `mcp_cls_url`, `mcp_monitor_url`
 
 ## Testing Notes
 
-Tests live in `tests/` directory. Use `pytest` with `asyncio_mode = "auto"`. The `pyproject.toml` configures coverage to exclude test files.
+Tests in `tests/`, use `pytest` with `asyncio_mode = "auto"` (configured in `pyproject.toml`).
+
+## Legacy AIOps
+
+The `/api/aiops` endpoint and `mcp_servers/cls_server.py`, `mcp_servers/monitor_server.py` are retained as legacy demos. The primary product is the travel agent.

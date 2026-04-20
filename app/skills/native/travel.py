@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, List
 
 from app.skills.base import Skill, SkillConfig
+from app.tools.live_search_tools import scrape_web_page, search_web_live
 from app.tools.travel_tools import (
     build_itinerary_outline,
     build_packing_checklist,
@@ -30,6 +31,22 @@ class TravelKnowledgeSkill(Skill):
         from app.skills.native.knowledge import retrieve_knowledge
 
         return [retrieve_knowledge]
+
+
+class LiveSearchSkill(Skill):
+    """Skill exposing live web search and page extraction."""
+
+    @property
+    def config(self) -> SkillConfig:
+        return SkillConfig(
+            name="live_search_skill",
+            description="Use SerpAPI and Firecrawl for live web search and page extraction",
+            enabled=True,
+            metadata={"category": "live_web", "priority": "high"},
+        )
+
+    def get_tools(self) -> List[Any]:
+        return [search_web_live, scrape_web_page]
 
 
 class ItineraryBuilderSkill(Skill):

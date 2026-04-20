@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator, Dict, Iterable, List, Sequence
+from typing import Any, AsyncGenerator, Dict, Iterable, List, Literal, Sequence
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from loguru import logger
 from pydantic import BaseModel, Field
 
 from app.config import config
 from app.core.llm_factory import llm_factory
 from app.models.travel import IntentRouteResult, TripContextMemory, UserProfileMemory
+from app.skills import skill_registry
 from app.services.travel_utils import chunk_text
 
 
@@ -38,6 +39,51 @@ class ReplanArtifact(BaseModel):
     risks: List[str] = Field(default_factory=list, description="Risks or caveats")
 
 
+class MultiAgentTask(BaseModel):
+    """Lead-planner task assigned to a specialist role."""
+
+    role_name: Literal[
+        "Destination Researcher",
+        "Transport And Stay Analyst",
+        "Itinerary Designer",
+        "Risk Advisor",
+    ]
+    objective: str = Field(description="Task objective for the assigned role")
+    destinations: List[str] = Field(default_factory=list, description="Relevant destinations")
+    success_criteria: List[str] = Field(
+        default_factory=list, description="How the role knows the task is complete"
+    )
+
+
+class LeadPlannerPlan(BaseModel):
+    """Structured task decomposition for multi-agent deep search."""
+
+    overall_goal: str = Field(description="Overall goal for the lead planner")
+    decision_criteria: List[str] = Field(
+        default_factory=list, description="How the final recommendation should be judged"
+    )
+    tasks: List[MultiAgentTask] = Field(default_factory=list, description="Specialist tasks")
+    synthesis_instruction: str = Field(description="How the lead planner should synthesize outputs")
+
+
+class ReActDecision(BaseModel):
+    """Single ReAct step for a specialist sub-agent."""
+
+    thought: str = Field(description="Short reasoning summary for the next step")
+    action: Literal[
+        "read_shared_context",
+        "retrieve_knowledge",
+        "plan_destination",
+        "replan_trip",
+        "search_web_live",
+        "scrape_web_page",
+        "inspect_peer_findings",
+        "finish",
+    ]
+    action_input: str = Field(default="", description="Input for the chosen action")
+    finish_answer: str = Field(default="", description="Final answer when action is finish")
+
+
 class TravelLLMService:
     """Thin wrapper around the configured chat model."""
 
@@ -50,6 +96,120 @@ class TravelLLMService:
             temperature=temperature,
             streaming=streaming,
         )
+
+    @staticmethod
+    def _get_available_tools(*, live_only: bool = False) -> List[Any]:
+        blocked = {"summarize_preference_memory"}
+        live_only_names = {"search_web_live", "scrape_web_page"}
+        tools: List[Any] = []
+        for tool in skill_registry.get_all_tools():
+            tool_name = getattr(tool, "name", "")
+            if tool_name in blocked:
+                continue
+            if live_only and tool_name not in live_only_names:
+                continue
+            tools.append(tool)
+        return tools
+
+    @staticmethod
+    def _requires_live_tools(question: str) -> bool:
+        normalized = question.lower()
+        live_markers = [
+            "最新",
+            "最近",
+            "实时",
+            "当前",
+            "今日",
+            "今天",
+            "weather",
+            "visa",
+            "汇率",
+            "营业时间",
+            "opening hours",
+            "price",
+            "票价",
+            "政策",
+        ]
+        return any(marker in normalized for marker in live_markers)
+
+    async def _invoke_text_with_tools(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.45,
+        max_tool_rounds: int = 4,
+        live_only: bool = False,
+    ) -> tuple[str, Dict[str, Any]]:
+        model = self._create_model(streaming=False, temperature=temperature)
+        tools = self._get_available_tools(live_only=live_only)
+        metadata: Dict[str, Any] = {
+            "tool_enabled": bool(tools),
+            "tool_used": False,
+            "tool_calls": [],
+        }
+
+        if not tools:
+            response = await model.ainvoke(
+                [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+            )
+            return self._coerce_text(getattr(response, "content", response)).strip(), metadata
+
+        bind_kwargs: Dict[str, Any] = {}
+        if live_only:
+            bind_kwargs["tool_choice"] = "required"
+        llm_with_tools = model.bind_tools(tools, **bind_kwargs)
+        tool_map = {
+            getattr(tool, "name", f"tool_{index}"): tool
+            for index, tool in enumerate(tools)
+        }
+        messages: List[Any] = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+
+        for _ in range(max_tool_rounds):
+            response = await llm_with_tools.ainvoke(messages)
+            messages.append(response)
+
+            tool_calls = getattr(response, "tool_calls", None) or []
+            if tool_calls:
+                metadata["tool_used"] = True
+                metadata["tool_calls"].extend(
+                    [call.get("name", "unknown") for call in tool_calls if isinstance(call, dict)]
+                )
+                for call in tool_calls:
+                    if not isinstance(call, dict):
+                        continue
+                    tool_name = call.get("name", "unknown")
+                    tool_args = call.get("args", {}) or {}
+                    tool_call_id = call.get("id", tool_name)
+                    tool_obj = tool_map.get(tool_name)
+                    if tool_obj is None:
+                        tool_content = f"Tool '{tool_name}' is not available."
+                    else:
+                        try:
+                            if hasattr(tool_obj, "ainvoke"):
+                                tool_result = await tool_obj.ainvoke(tool_args)
+                            else:
+                                tool_result = tool_obj.invoke(tool_args)
+                            tool_content = self._coerce_text(tool_result) or str(tool_result)
+                        except Exception as exc:
+                            logger.warning(f"Tool call failed for {tool_name}: {exc}")
+                            tool_content = f"Tool '{tool_name}' failed: {exc}"
+                    messages.append(ToolMessage(content=tool_content, tool_call_id=tool_call_id))
+                continue
+
+            answer = self._coerce_text(getattr(response, "content", response)).strip()
+            return answer, metadata
+
+        fallback = ""
+        for message in reversed(messages):
+            text = self._coerce_text(getattr(message, "content", message)).strip()
+            if text:
+                fallback = text
+                break
+        return fallback, metadata
 
     async def generate_final_answer(
         self,
@@ -72,31 +232,31 @@ class TravelLLMService:
             return draft, metadata
 
         try:
-            model = self._create_model(streaming=False)
-            response = await model.ainvoke(
-                [
-                    SystemMessage(content=self._build_system_prompt(route)),
-                    HumanMessage(
-                        content=self._build_user_prompt(
-                            question=question,
-                            route=route,
-                            user_profile=user_profile,
-                            trip_context=trip_context,
-                            session_history=session_history,
-                            draft=draft,
-                            knowledge_context=knowledge_context,
-                            metadata=metadata,
-                        )
-                    ),
-                ]
+            live_only = self._requires_live_tools(question)
+            answer, tool_metadata = await self._invoke_text_with_tools(
+                system_prompt=self._build_system_prompt(route),
+                user_prompt=self._build_user_prompt(
+                    question=question,
+                    route=route,
+                    user_profile=user_profile,
+                    trip_context=trip_context,
+                    session_history=session_history,
+                    draft=draft,
+                    knowledge_context=knowledge_context,
+                    metadata=metadata,
+                ),
+                live_only=live_only,
             )
-            answer = self._coerce_text(getattr(response, "content", response))
             if not answer.strip():
                 raise ValueError("Model returned empty content")
 
             answer = self._compose_user_answer(route=route, llm_overlay=answer, draft=draft)
+            metadata.update(tool_metadata)
+            metadata["live_tool_hint"] = live_only
             metadata["llm_used"] = True
-            metadata["generation_mode"] = "llm"
+            metadata["generation_mode"] = (
+                "llm_with_tools" if tool_metadata.get("tool_used") else "llm"
+            )
             return answer, metadata
         except Exception as exc:
             logger.warning(f"Travel LLM final answer generation failed, using fallback: {exc}")
@@ -117,45 +277,18 @@ class TravelLLMService:
         knowledge_context: str = "",
         metadata: Dict[str, Any] | None = None,
     ) -> AsyncGenerator[str, None]:
-        metadata = dict(metadata or {})
-        if not self.is_available():
-            for chunk in chunk_text(draft):
-                yield chunk
-            return
-
-        try:
-            model = self._create_model(streaming=True)
-            overlay_emitted = False
-            async for chunk in model.astream(
-                [
-                    SystemMessage(content=self._build_system_prompt(route)),
-                    HumanMessage(
-                        content=self._build_user_prompt(
-                            question=question,
-                            route=route,
-                            user_profile=user_profile,
-                            trip_context=trip_context,
-                            session_history=session_history,
-                            draft=draft,
-                            knowledge_context=knowledge_context,
-                            metadata=metadata,
-                        )
-                    ),
-                ]
-            ):
-                text = self._coerce_text(getattr(chunk, "content", chunk))
-                if text:
-                    overlay_emitted = True
-                    yield text
-            if draft.strip():
-                if overlay_emitted:
-                    yield "\n\n"
-                for draft_chunk in chunk_text(draft):
-                    yield draft_chunk
-        except Exception as exc:
-            logger.warning(f"Travel LLM stream failed, falling back to template chunks: {exc}")
-            for chunk in chunk_text(draft):
-                yield chunk
+        answer, _ = await self.generate_final_answer(
+            question=question,
+            route=route,
+            user_profile=user_profile,
+            trip_context=trip_context,
+            session_history=session_history,
+            draft=draft,
+            knowledge_context=knowledge_context,
+            metadata=metadata,
+        )
+        for chunk in chunk_text(answer):
+            yield chunk
 
     async def generate_role_output(
         self,
@@ -237,6 +370,103 @@ class TravelLLMService:
             logger.warning(f"Structured replan artifact generation failed: {exc}")
             return None
 
+    async def plan_multi_agent_tasks(
+        self,
+        *,
+        question: str,
+        user_profile: UserProfileMemory,
+        trip_context: TripContextMemory,
+        shared_context: str,
+        completed_findings: str = "",
+        pending_updates: Sequence[str] | None = None,
+    ) -> LeadPlannerPlan | None:
+        if not self.is_available():
+            return None
+
+        try:
+            model = self._create_model(streaming=False, temperature=0.2)
+            structured_model = model.with_structured_output(LeadPlannerPlan)
+            return await structured_model.ainvoke(
+                [
+                    SystemMessage(
+                        content=(
+                            "你是 TripBuddy 的 Lead Planner。"
+                            "你的任务是收到用户问题后，把任务分解给不同的旅行专家角色。"
+                            "只能使用这些角色：Destination Researcher、Transport And Stay Analyst、"
+                            "Itinerary Designer、Risk Advisor。"
+                            "请做最小但完整的任务分解，通常输出 3 到 4 个 task。"
+                            "如果有人类追加条件，要把它视为高优先级约束，反映到后续任务中。"
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"用户问题：\n{question}\n\n"
+                            f"用户画像：\n{self._format_user_profile(user_profile)}\n\n"
+                            f"Trip context：\n{self._format_trip_context(trip_context)}\n\n"
+                            f"共享上下文：\n{shared_context[:2200]}\n\n"
+                            f"已完成发现：\n{completed_findings or '暂无'}\n\n"
+                            f"用户追加条件：\n{chr(10).join(pending_updates or []) or '暂无'}\n\n"
+                            "请返回结构化任务分解。每个 task 要明确 objective、destinations 和 success_criteria。"
+                        )
+                    ),
+                ]
+            )
+        except Exception as exc:
+            logger.warning(f"Lead planner task decomposition failed: {exc}")
+            return None
+
+    async def decide_react_step(
+        self,
+        *,
+        role_name: str,
+        role_goal: str,
+        task_objective: str,
+        question: str,
+        user_profile: UserProfileMemory,
+        trip_context: TripContextMemory,
+        shared_context: str,
+        peer_findings: str,
+        scratchpad: str,
+        pending_updates: Sequence[str] | None = None,
+    ) -> ReActDecision | None:
+        if not self.is_available():
+            return None
+
+        try:
+            model = self._create_model(streaming=False, temperature=0.2)
+            structured_model = model.with_structured_output(ReActDecision)
+            return await structured_model.ainvoke(
+                [
+                    SystemMessage(
+                        content=(
+                            f"你是 TripBuddy 的子 Agent：{role_name}。"
+                            f"你的职责是：{role_goal}。"
+                            "你要用 ReAct 方式工作：先判断下一步，再选择一个 action。"
+                            "可选 action 只有：read_shared_context、retrieve_knowledge、plan_destination、"
+                            "replan_trip、inspect_peer_findings、finish。"
+                            "如果已有足够信息，就输出 finish。"
+                            "整个过程追求收敛，避免重复读取同一个信息源。"
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"用户问题：\n{question}\n\n"
+                            f"当前任务目标：\n{task_objective}\n\n"
+                            f"用户画像：\n{self._format_user_profile(user_profile)}\n\n"
+                            f"Trip context：\n{self._format_trip_context(trip_context)}\n\n"
+                            f"共享上下文：\n{shared_context[:1800]}\n\n"
+                            f"其他角色已完成发现：\n{peer_findings or '暂无'}\n\n"
+                            f"当前 scratchpad：\n{scratchpad or '暂无'}\n\n"
+                            f"用户最新追加条件：\n{chr(10).join(pending_updates or []) or '暂无'}\n\n"
+                            "请输出下一步 ReAct 决策。finish_answer 只在 finish 时填写。"
+                        )
+                    ),
+                ]
+            )
+        except Exception as exc:
+            logger.warning(f"ReAct decision failed for {role_name}: {exc}")
+            return None
+
     def _build_system_prompt(self, route: IntentRouteResult) -> str:
         common_rules = (
             "你是 TripBuddy，一个旅行规划与重规划助手。"
@@ -269,6 +499,81 @@ class TravelLLMService:
             common_rules
             + "当前任务偏向 plan-and-execute 重规划，请优先保留 must-do 项目并最小化改动成本。"
         )
+
+    async def decide_react_step(
+        self,
+        *,
+        role_name: str,
+        role_goal: str,
+        task_objective: str,
+        question: str,
+        user_profile: UserProfileMemory,
+        trip_context: TripContextMemory,
+        shared_context: str,
+        peer_findings: str,
+        scratchpad: str,
+        pending_updates: Sequence[str] | None = None,
+    ) -> ReActDecision | None:
+        if not self.is_available():
+            return None
+
+        try:
+            model = self._create_model(streaming=False, temperature=0.2)
+            structured_model = model.with_structured_output(ReActDecision)
+            return await structured_model.ainvoke(
+                [
+                    SystemMessage(
+                        content=(
+                            f"You are the TripBuddy specialist sub-agent: {role_name}. "
+                            f"Your responsibility is: {role_goal}. "
+                            "Use a compact ReAct decision policy. "
+                            "Choose exactly one next action from: "
+                            "read_shared_context, retrieve_knowledge, plan_destination, "
+                            "replan_trip, search_web_live, scrape_web_page, inspect_peer_findings, finish. "
+                            "Use search_web_live when the task depends on current web information. "
+                            "Use scrape_web_page only after you already have a useful URL or domain hint. "
+                            "Finish as soon as you have enough evidence. Avoid repeating the same lookup."
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"User question:\n{question}\n\n"
+                            f"Current task objective:\n{task_objective}\n\n"
+                            f"User profile:\n{self._format_user_profile(user_profile)}\n\n"
+                            f"Trip context:\n{self._format_trip_context(trip_context)}\n\n"
+                            f"Shared context:\n{shared_context[:1800]}\n\n"
+                            f"Peer findings:\n{peer_findings or 'none'}\n\n"
+                            f"Scratchpad:\n{scratchpad or 'none'}\n\n"
+                            f"Human updates:\n{chr(10).join(pending_updates or []) or 'none'}\n\n"
+                            "Return one structured ReActDecision. Fill finish_answer only when action=finish."
+                        )
+                    ),
+                ]
+            )
+        except Exception as exc:
+            logger.warning(f"ReAct decision failed for {role_name}: {exc}")
+            return None
+
+    def _build_system_prompt(self, route: IntentRouteResult) -> str:
+        common_rules = (
+            "You are TripBuddy, a travel planning and re-planning assistant. "
+            "Always answer in Chinese. "
+            "You receive structured facts, memory, trip context, a draft, and optional knowledge snippets. "
+            "Treat those inputs as trusted facts and do not contradict them. "
+            "If destination, days, budget, preferences, or companions already appear in context, never claim the user did not provide them. "
+            "Your job is to improve, summarize, and finalize the draft instead of replacing it with an unrelated plan. "
+            "Do not invent live weather, exchange rates, visa policy, opening hours, prices, or availability. "
+            "When the request depends on current web information, use the available tools such as search_web_live and scrape_web_page before answering. "
+            "If tool outputs contain useful URLs, keep the most important source links in the answer."
+        )
+
+        if route.route_type == "knowledge":
+            return common_rules + " Focus on concise travel Q&A and practical recommendations."
+        if route.route_type == "workflow":
+            return common_rules + " Focus on polishing the workflow draft into a user-ready answer."
+        if route.route_type == "multi_agent":
+            return common_rules + " Act as the Lead Planner and synthesize specialist findings with clear trade-offs."
+        return common_rules + " Focus on plan-and-execute style re-planning with minimal disruption."
 
     def _build_user_prompt(
         self,

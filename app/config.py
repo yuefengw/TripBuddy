@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     dashscope_api_key: str = ""
     dashscope_model: str = "qwen-max"
     dashscope_embedding_model: str = "text-embedding-v4"
+    serpapi_api_key: str = ""
+    serpapi_base_url: str = "https://serpapi.com"
+    firecrawl_api_key: str = ""
+    firecrawl_base_url: str = "https://api.firecrawl.dev"
+    live_search_timeout_seconds: int = 25
 
     milvus_host: str = "localhost"
     milvus_port: int = 19530

@@ -4,6 +4,7 @@ class TripBuddyApp {
         this.currentMode = "standard_search";
         this.sessionId = this.generateSessionId();
         this.isStreaming = false;
+        this.currentStreamRouteType = null;
         this.currentChatHistory = [];
         this.chatHistories = this.loadChatHistories();
         this.isCurrentChatFromHistory = false;
@@ -37,13 +38,17 @@ class TripBuddyApp {
     }
 
     initializeElements() {
+        this.mainPanel = document.querySelector(".main-panel");
+        this.contentPanel = document.querySelector(".content-panel");
         this.newChatBtn = document.getElementById("newChatBtn");
         this.chatHistoryList = document.getElementById("chatHistoryList");
         this.topbar = document.getElementById("topbar");
         this.topbarCopy = document.getElementById("topbarCopy");
         this.heroPanel = document.getElementById("heroPanel");
         this.quickPrompts = document.getElementById("quickPrompts");
+        this.chatStage = document.querySelector(".chat-stage");
         this.chatMessages = document.getElementById("chatMessages");
+        this.composerShell = document.querySelector(".composer-shell");
         this.messageInput = document.getElementById("messageInput");
         this.sendButton = document.getElementById("sendButton");
         this.toolsBtn = document.getElementById("toolsBtn");
@@ -106,6 +111,8 @@ class TripBuddyApp {
                 this.closeMenus();
             }
         });
+
+        window.addEventListener("resize", () => this.syncLayout());
     }
 
     generateSessionId() {
@@ -150,9 +157,36 @@ class TripBuddyApp {
 
     refreshEmptyState() {
         const shouldShowIntro = this.currentChatHistory.length === 0;
+        this.mainPanel?.classList.toggle("is-empty", shouldShowIntro);
         this.heroPanel?.classList.toggle("is-hidden", !shouldShowIntro);
         this.topbarCopy?.classList.toggle("is-hidden", !shouldShowIntro);
         this.topbar?.classList.toggle("is-compact", !shouldShowIntro);
+        requestAnimationFrame(() => this.syncLayout());
+    }
+
+    syncLayout() {
+        if (!this.mainPanel || !this.heroPanel || !this.contentPanel) return;
+
+        const isEmpty = this.currentChatHistory.length === 0;
+        if (!isEmpty) {
+            this.heroPanel.style.maxHeight = "";
+            this.heroPanel.style.overflowY = "";
+            return;
+        }
+
+        const mainPanelHeight = this.mainPanel.clientHeight;
+        const composerHeight = this.composerShell?.offsetHeight || 0;
+        const mainStyles = window.getComputedStyle(this.mainPanel);
+        const mainGap = parseFloat(mainStyles.gap || "0") || 0;
+        const availableContentHeight = Math.max(0, mainPanelHeight - composerHeight - mainGap);
+        const topbarHeight = this.topbar?.offsetHeight || 0;
+        const contentGap = parseFloat(window.getComputedStyle(this.contentPanel).gap || "0") || 0;
+        const reservedSpace = 24;
+        const heroMaxHeight = Math.max(180, availableContentHeight - topbarHeight - contentGap - reservedSpace);
+
+        this.heroPanel.style.maxHeight = `${Math.floor(heroMaxHeight)}px`;
+        this.heroPanel.style.overflowY = "auto";
+        this.contentPanel.scrollTop = 0;
     }
 
     renderChatHistory() {
@@ -316,7 +350,13 @@ class TripBuddyApp {
 
     async sendMessage() {
         const question = this.messageInput.value.trim();
-        if (!question || this.isStreaming) return;
+        if (!question) return;
+        if (this.isStreaming) {
+            if (this.currentStreamRouteType === "multi_agent") {
+                await this.sendHumanInterrupt(question);
+            }
+            return;
+        }
 
         this.closeMenus();
         this.hasInteracted = true;
@@ -334,6 +374,7 @@ class TripBuddyApp {
         this.persistCurrentChat();
 
         this.isStreaming = true;
+        this.currentStreamRouteType = null;
         this.updateSendState();
 
         try {
@@ -349,13 +390,44 @@ class TripBuddyApp {
             this.showNotification("请求失败，请稍后再试。", "error");
         } finally {
             this.isStreaming = false;
+            this.currentStreamRouteType = null;
             this.updateSendState();
         }
     }
 
     updateSendState() {
         if (!this.sendButton) return;
-        this.sendButton.disabled = this.isStreaming;
+        this.sendButton.disabled = this.isStreaming && this.currentStreamRouteType !== "multi_agent";
+    }
+
+    async sendHumanInterrupt(question) {
+        this.closeMenus();
+        this.hasInteracted = true;
+        this.refreshEmptyState();
+        this.addMessage("user", question);
+        this.messageInput.value = "";
+        this.autoResizeInput();
+        this.persistCurrentChat();
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/chat/interrupt`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    sessionId: this.sessionId,
+                    message: question
+                })
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.status !== "success" || !payload.data?.accepted) {
+                throw new Error(payload.message || "追加条件失败");
+            }
+            this.showNotification("新条件已交给主 Agent，正在重分解任务。", "info");
+        } catch (error) {
+            this.showNotification(`追加条件失败：${error.message}`, "error");
+        }
     }
 
     async sendStreamRequest(question, assistantMessage) {
@@ -409,9 +481,20 @@ class TripBuddyApp {
 
                 if (message.type === "route") {
                     routeMeta = message.data;
+                    this.currentStreamRouteType = routeMeta?.route_type || null;
+                    this.updateSendState();
                     this.updateAssistantMessage(assistantMessage, fullResponse, {
                         route: routeMeta,
                         done: false
+                    });
+                }
+
+                if (message.type === "status") {
+                    this.updateAssistantMessage(assistantMessage, fullResponse, {
+                        route: routeMeta,
+                        done: false,
+                        pending: !fullResponse,
+                        statusText: message.data || ""
                     });
                 }
 
@@ -440,9 +523,11 @@ class TripBuddyApp {
                         route: routeMeta,
                         done: true
                     });
+                    this.currentStreamRouteType = null;
                 }
 
                 if (message.type === "error") {
+                    this.currentStreamRouteType = null;
                     throw new Error(message.data || "流式请求失败");
                 }
             }
@@ -554,7 +639,7 @@ class TripBuddyApp {
 
         if (shouldShowPending) {
             contentEl.classList.add("is-pending");
-            contentEl.innerHTML = this.renderPendingState(options.route);
+            contentEl.innerHTML = this.renderPendingState(options.route, options.statusText || "");
         } else if (options.done === false) {
             contentEl.classList.add("streaming");
             contentEl.textContent = normalizedContent;
@@ -572,13 +657,15 @@ class TripBuddyApp {
         this.scrollToBottom(options.done === false || this.isStreaming);
     }
 
-    renderPendingState(route) {
+    renderPendingState(route, statusText = "") {
         const title = route?.route_type
             ? `已进入${this.formatRouteType(route.route_type)}`
             : "正在分析你的旅行问题";
-        const subtitle = route?.selected_workflow
-            ? `准备执行 ${route.selected_workflow}`
-            : "正在识别意图、读取记忆并组织回答";
+        const subtitle = statusText || (
+            route?.selected_workflow
+                ? `准备执行 ${route.selected_workflow}`
+                : "正在识别意图、读取记忆并组织回答"
+        );
 
         return `
             <div class="assistant-pending">
@@ -625,8 +712,7 @@ class TripBuddyApp {
             knowledge: "知识问答",
             workflow: "固定 Workflow",
             multi_agent: "Multi-Agent",
-            plan_execute: "Plan-and-Execute",
-            legacy_aiops: "Legacy AIOps"
+            plan_execute: "Plan-and-Execute"
         };
         return mapping[routeType] || routeType;
     }
@@ -648,8 +734,12 @@ class TripBuddyApp {
         if (!this.chatMessages) return;
         if (!force && !this.isNearBottom()) return;
 
+        const container = this.chatMessages;
+        const lastMessage = container.lastElementChild;
+        if (!lastMessage) return;
+
         const applyScroll = () => {
-            this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+            lastMessage.scrollIntoView({ behavior: 'instant', block: 'end' });
         };
 
         applyScroll();
