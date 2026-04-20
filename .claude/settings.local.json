@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./start-windows.bat)",
+      "Bash(cmd /c \"start-windows.bat\")",
+      "Bash(cmd /c \"cd /d d:\\\\Project\\\\TripBuddy && start-windows.bat\")",
+      "Bash(curl -s http://localhost:9900/health)",
+      "Bash(docker compose *)",
+      "Bash(.venv/Scripts/python.exe mcp_servers/cls_server.py)",
+      "Bash(.venv/Scripts/python.exe mcp_servers/monitor_server.py)",
+      "Bash(.venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 9900)",
+      "Bash(uv venv *)",
+      "Bash(python -m venv .venv)",
+      "Bash(.venv/Scripts/pip.exe install *)",
+      "Bash(.venv/Scripts/python.exe -c \"import app.main; print\\('OK'\\)\")",
+      "Bash(curl -s -X POST \"http://localhost:9900/api/chat\" -H \"Content-Type: application/json\" -d '{\"id\":\"test\",\"Question\":\"你好\"}')",
+      "Bash(curl -s -X POST \"http://localhost:9900/api/chat\" -H \"Content-Type: application/json\" -d '{\"Id\":\"test\",\"Question\":\"你好\"}')",
+      "Bash(curl -s -X POST \"http://localhost:9900/api/chat_stream\" -H \"Content-Type: application/json\" -d '{\"Id\":\"test\",\"Question\":\"你好\"}')",
+      "Bash(curl -s -X POST \"http://localhost:9900/api/chat\" -H \"Content-Type: application/json; charset=utf-8\" -d \"{\\\\\"Id\\\\\":\\\\\"test\\\\\",\\\\\"Question\\\\\":\\\\\"你好\\\\\"}\")",
+      "Bash(curl -s -X POST \"http://localhost:9900/api/chat\" -H \"Content-Type: application/json\" --data-raw '{\"Id\":\"test\",\"Question\":\"你好\"}')",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(python -m py_compile app/skills/base.py app/skills/registry.py app/skills/__init__.py app/skills/native/__init__.py app/skills/native/knowledge.py app/skills/native/time.py app/skills/mcp/__init__.py app/skills/mcp/servers.py)",
+      "Bash(python -m py_compile app/agent/mcp_client.py app/services/rag_agent_service.py app/agent/aiops/executor.py app/main.py)",
+      "Bash(python -c \"from app.skills import load_skills, skill_registry; print\\('Import successful'\\)\")"
+    ]
+  }
+}

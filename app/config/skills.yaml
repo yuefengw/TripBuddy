@@ -1,0 +1,39 @@
+# 技能配置文件
+# 统一工具调用框架 - Skills 配置化封装
+
+skills:
+  # === 本地工具技能 ===
+
+  - name: knowledge_retrieval
+    description: 从向量知识库中检索相关信息来回答问题
+    enabled: true
+    mcp_server: null
+    metadata:
+      category: rag
+      priority: high
+
+  - name: time_query
+    description: 获取当前时间和日期信息
+    enabled: true
+    mcp_server: null
+    metadata:
+      category: utility
+      priority: high
+
+  # === MCP 工具技能 ===
+
+  - name: log_query
+    description: 日志查询服务 - 支持搜索服务日志、分析日志模式
+    enabled: true
+    mcp_server: cls
+    metadata:
+      category: aiops
+      priority: high
+
+  - name: monitor_query
+    description: 监控数据服务 - 支持查询 CPU、内存、进程等指标
+    enabled: true
+    mcp_server: monitor
+    metadata:
+      category: aiops
+      priority: high
