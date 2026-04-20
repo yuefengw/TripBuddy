@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -30,12 +30,9 @@ class TravelMemoryService:
     def __init__(self, store_path: str = "app/data/travel_memory.json") -> None:
         self.store_path = Path(store_path)
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = RLock()
         if not self.store_path.exists():
-            self.store_path.write_text(
-                json.dumps({"profiles": {}, "trips": {}, "sessions": {}}, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        self._lock = Lock()
+            self._write_store({"profiles": {}, "trips": {}, "sessions": {}})
 
     def _read_store(self) -> Dict[str, Any]:
         with self._lock:
@@ -55,19 +52,15 @@ class TravelMemoryService:
             )
 
     def get_user_profile(self, session_id: str) -> UserProfileMemory:
-        data = self._read_store()
-        profile = data.get("profiles", {}).get(session_id, {})
+        profile = self._read_store().get("profiles", {}).get(session_id, {})
         return UserProfileMemory(**profile)
 
     def get_trip_context(self, session_id: str) -> TripContextMemory:
-        data = self._read_store()
-        trip_context = data.get("trips", {}).get(session_id, {})
+        trip_context = self._read_store().get("trips", {}).get(session_id, {})
         return TripContextMemory(**trip_context)
 
     def get_session_history(self, session_id: str) -> List[Dict[str, str]]:
-        data = self._read_store()
-        entries = data.get("sessions", {}).get(session_id, [])
-        return entries
+        return self._read_store().get("sessions", {}).get(session_id, [])
 
     def upsert_user_profile(
         self, session_id: str, profile: UserProfileMemory | Dict[str, Any]
@@ -97,16 +90,20 @@ class TravelMemoryService:
         current_trip = self.get_trip_context(session_id)
 
         if user_profile:
-            merged_profile = current_profile.model_copy(
-                update=self._merge_dicts(current_profile.model_dump(), user_profile)
+            current_profile = self.upsert_user_profile(
+                session_id,
+                current_profile.model_copy(
+                    update=self._merge_dicts(current_profile.model_dump(), user_profile)
+                ),
             )
-            current_profile = self.upsert_user_profile(session_id, merged_profile)
 
         if trip_context:
-            merged_trip = current_trip.model_copy(
-                update=self._merge_dicts(current_trip.model_dump(), trip_context)
+            current_trip = self.upsert_trip_context(
+                session_id,
+                current_trip.model_copy(
+                    update=self._merge_dicts(current_trip.model_dump(), trip_context)
+                ),
             )
-            current_trip = self.upsert_trip_context(session_id, merged_trip)
 
         return current_profile, current_trip
 

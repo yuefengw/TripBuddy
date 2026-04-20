@@ -1,89 +1,24 @@
-"""知识检索技能"""
+"""Native knowledge-retrieval skill."""
 
-from typing import Any, List, Tuple
+from __future__ import annotations
 
-from langchain_core.documents import Document
-from langchain_core.tools import tool
-from loguru import logger
+from typing import Any, List
 
-from app.config import config
-from app.services.vector_store_manager import vector_store_manager
 from app.skills.base import Skill, SkillConfig
+from app.tools.knowledge_tool import retrieve_knowledge
 
 
 class KnowledgeRetrievalSkill(Skill):
-    """知识检索技能 - 从向量数据库中检索相关信息"""
+    """Expose vector-knowledge retrieval as a skill."""
 
     @property
     def config(self) -> SkillConfig:
         return SkillConfig(
             name="knowledge_retrieval",
-            description="从向量知识库中检索相关信息来回答问题",
+            description="从向量知识库检索相关旅行资料",
             enabled=True,
-            mcp_server=None,
-            metadata={"category": "rag", "priority": "high"}
+            metadata={"category": "rag", "priority": "high"},
         )
 
     def get_tools(self) -> List[Any]:
         return [retrieve_knowledge]
-
-
-@tool(response_format="content_and_artifact")
-def retrieve_knowledge(query: str) -> Tuple[str, List[Document]]:
-    """从知识库中检索相关信息来回答问题
-
-    当用户的问题涉及专业知识、文档内容或需要参考资料时，使用此工具。
-
-    Args:
-        query: 用户的问题或查询
-
-    Returns:
-        Tuple[str, List[Document]]: (格式化的上下文文本, 原始文档列表)
-    """
-    try:
-        logger.info(f"知识检索工具被调用: query='{query}'")
-
-        vector_store = vector_store_manager.get_vector_store()
-        retriever = vector_store.as_retriever(
-            search_kwargs={"k": config.rag_top_k}
-        )
-
-        docs = retriever.invoke(query)
-
-        if not docs:
-            logger.warning("未检索到相关文档")
-            return "没有找到相关信息。", []
-
-        context = _format_docs(docs)
-        logger.info(f"检索到 {len(docs)} 个相关文档")
-        return context, docs
-
-    except Exception as e:
-        logger.error(f"知识检索工具调用失败: {e}")
-        return f"检索知识时发生错误: {str(e)}", []
-
-
-def _format_docs(docs: List[Document]) -> str:
-    """格式化文档列表为上下文文本"""
-    formatted_parts = []
-
-    for i, doc in enumerate(docs, 1):
-        metadata = doc.metadata
-        source = metadata.get("_file_name", "未知来源")
-
-        headers = []
-        for key in ["h1", "h2", "h3"]:
-            if key in metadata and metadata[key]:
-                headers.append(metadata[key])
-
-        header_str = " > ".join(headers) if headers else ""
-
-        formatted = f"【参考资料 {i}】"
-        if header_str:
-            formatted += f"\n标题: {header_str}"
-        formatted += f"\n来源: {source}"
-        formatted += f"\n内容:\n{doc.page_content}\n"
-
-        formatted_parts.append(formatted)
-
-    return "\n".join(formatted_parts)

@@ -3,127 +3,157 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能OnCall助手</title>
+    <title>TripBuddy Travel Agent</title>
     <link rel="stylesheet" href="/static/styles.css">
-    <!-- Markdown 渲染库 -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
-    <!-- 代码高亮库（可选） -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/es/highlight.min.js"></script>
 </head>
 <body>
-    <div class="app-layout">
-        <!-- 左侧边栏 -->
+    <div class="app-shell">
         <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2 class="sidebar-title">智能OnCall助手</h2>
-            </div>
-            
-            <div class="sidebar-content">
-                <button class="new-chat-btn" id="newChatBtn">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                    </svg>
-                    <span>新建对话</span>
-                </button>
-                
-                <div class="chat-history-section">
-                    <div class="history-header">
-                        <span>近期对话</span>
-                    </div>
-                    <div class="chat-history-list" id="chatHistoryList">
-                        <!-- 历史对话列表将在这里动态生成 -->
-                    </div>
+            <div class="brand-block">
+                <div class="brand-mark">TB</div>
+                <div class="brand-copy">
+                    <h1>TripBuddy</h1>
+                    <p>旅行 Agent 助手</p>
                 </div>
-                
+            </div>
+
+            <button class="sidebar-primary-btn" id="newChatBtn">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <span>新建旅行对话</span>
+            </button>
+
+            <div class="sidebar-section">
+                <div class="section-label">最近旅程</div>
+                <div class="chat-history-list" id="chatHistoryList"></div>
             </div>
         </aside>
 
-        <!-- 主内容区域 -->
-        <main class="main-content">
-            <button class="ai-ops-top-btn" id="aiOpsSidebarBtn">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span>AI Ops</span>
-            </button>
-            <div class="chat-container">
-                <div class="welcome-greeting" id="welcomeGreeting">
-                    <p>你好！我是智能Oncall小助手</p>
+        <main class="main-panel">
+            <header class="topbar">
+                <div class="topbar-copy">
+                    <span class="eyebrow">Travel Planning · Replanning · Memory</span>
+                    <h2>把旅行灵感、行程生成、重规划和偏好记忆放进一个入口</h2>
                 </div>
-                <div class="chat-messages" id="chatMessages">
+                <button class="legacy-btn" id="aiOpsSidebarBtn">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L15.5 8.5L22 12L15.5 15.5L12 22L8.5 15.5L2 12L8.5 8.5L12 2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                    </svg>
+                    <span>Legacy AIOps Demo</span>
+                </button>
+            </header>
+
+            <section class="hero-panel" id="heroPanel">
+                <div class="hero-card">
+                    <div class="hero-badge">TripBuddy Orchestrator</div>
+                    <h3>像和一个会规划、会记住你偏好的旅行搭子聊天</h3>
+                    <p>
+                        你可以问我目的地推荐、按天行程、预算拆分、出行清单，
+                        也可以把“下雨了怎么办”“航班延误怎么改计划”这种临场问题直接丢给我。
+                    </p>
                 </div>
-                
-                <div class="chat-input-container">
-                    <div class="input-group-wrapper">
-                        <div class="input-wrapper">
-                            <input type="text" id="messageInput" placeholder="问问智能OnCall助手" maxlength="1000" class="message-input">
-                            <div class="input-bottom-bar">
-                                <div class="tools-btn-wrapper">
-                                    <button class="tools-btn" id="toolsBtn" title="更多选项">
-                                        <svg class="tools-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                                            <circle cx="19" cy="12" r="1.5" fill="currentColor"/>
-                                            <circle cx="5" cy="12" r="1.5" fill="currentColor"/>
-                                        </svg>
-                                    </button>
-                                    <div class="tools-menu" id="toolsMenu">
-                                        <div class="tools-menu-item" id="uploadFileItem">
-                                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                            </svg>
-                                            <span>上传文件</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="right-actions">
-                                    <div class="mode-selector-wrapper">
-                                        <button class="mode-selector-btn" id="modeSelectorBtn">
-                                            <span id="currentModeText">快速</span>
-                                            <svg class="dropdown-arrow" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                            </svg>
-                                        </button>
-                                        <div class="mode-dropdown" id="modeDropdown">
-                                            <div class="dropdown-header">选择对话方式</div>
-                                            <div class="dropdown-item active" data-mode="quick">
-                                                <div class="dropdown-item-main">
-                                                    <span>快速</span>
-                                                    <span class="badge-new">新</span>
-                                                </div>
-                                                <div class="dropdown-item-sub">快速对话</div>
-                                            </div>
-                                            <div class="dropdown-item" data-mode="stream">
-                                                <div class="dropdown-item-main">
-                                                    <span>流式</span>
-                                                </div>
-                                                <div class="dropdown-item-sub">流式对话</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <button class="send-btn-circle" id="sendButton" title="发送">
+
+                <div class="hero-grid" id="quickPrompts">
+                    <button class="prompt-card" data-prompt="6 月第一次去成都适合怎么玩？">
+                        <span class="prompt-tag">知识问答</span>
+                        <strong>第一次去成都怎么玩</strong>
+                        <span>适合灵感型和攻略咨询型问题</span>
+                    </button>
+                    <button class="prompt-card" data-prompt="帮我做一个 4 天重庆美食行程，预算 3000。">
+                        <span class="prompt-tag">固定 Workflow</span>
+                        <strong>生成 4 天重庆美食行程</strong>
+                        <span>直接触发行程工作流</span>
+                    </button>
+                    <button class="prompt-card" data-prompt="东京和大阪哪个更适合带 6 岁孩子玩 5 天，预算 1 万，请给两个方案比较。">
+                        <span class="prompt-tag">Multi-Agent</span>
+                        <strong>比较东京和大阪亲子方案</strong>
+                        <span>适合多约束、多方案对比</span>
+                    </button>
+                    <button class="prompt-card" data-prompt="我后天去杭州，但预报下雨，原本西湖一日游怎么重排？">
+                        <span class="prompt-tag">Plan-and-Execute</span>
+                        <strong>遇到下雨时重排行程</strong>
+                        <span>适合行中变化和计划调整</span>
+                    </button>
+                </div>
+            </section>
+
+            <section class="chat-stage">
+                <div class="chat-messages" id="chatMessages"></div>
+            </section>
+
+            <section class="composer-shell">
+                <div class="composer">
+                    <textarea
+                        id="messageInput"
+                        class="message-input"
+                        placeholder="例如：帮我规划 5 天东京行程，预算 8000，喜欢美食和二次元"
+                        rows="1"
+                    ></textarea>
+
+                    <div class="composer-toolbar">
+                        <div class="toolbar-left">
+                            <div class="menu-wrap">
+                                <button class="icon-btn" id="toolsBtn" title="更多操作">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                                        <circle cx="19" cy="12" r="1.5" fill="currentColor"/>
+                                        <circle cx="5" cy="12" r="1.5" fill="currentColor"/>
+                                    </svg>
+                                </button>
+                                <div class="menu-panel" id="toolsMenu">
+                                    <button class="menu-item" id="uploadFileItem">
                                         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                         </svg>
+                                        <span>上传旅行资料到知识库</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="mode-wrap">
+                                <button class="mode-btn" id="modeSelectorBtn">
+                                    <span id="currentModeText">标准回复</span>
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                <div class="menu-panel mode-panel" id="modeDropdown">
+                                    <button class="menu-item is-active" data-mode="quick">
+                                        <div>
+                                            <strong>标准回复</strong>
+                                            <span>一次性返回完整结果</span>
+                                        </div>
+                                    </button>
+                                    <button class="menu-item" data-mode="stream">
+                                        <div>
+                                            <strong>流式回复</strong>
+                                            <span>边生成边展示内容和路由信息</span>
+                                        </div>
                                     </button>
                                 </div>
                             </div>
                         </div>
+
+                        <button class="send-btn" id="sendButton" title="发送">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
                     </div>
-                    <input type="file" id="fileInput" accept=".txt,.md,.markdown" style="display: none;">
                 </div>
-            </div>
+                <input type="file" id="fileInput" accept=".txt,.md,.markdown" hidden>
+            </section>
         </main>
     </div>
 
-    <!-- 加载遮罩层 -->
-    <div id="loadingOverlay" class="loading-overlay">
-        <div class="loading-content">
-            <div class="loading-spinner"></div>
-            <div class="loading-text">智能运维分析中，请稍候...</div>
-            <div class="loading-subtext">后端正在处理，请耐心等待</div>
+    <div class="overlay" id="loadingOverlay">
+        <div class="overlay-card">
+            <div class="overlay-spinner"></div>
+            <div class="overlay-title">TripBuddy 正在处理</div>
+            <div class="overlay-subtitle">正在整理路线、预算、记忆和建议，请稍候</div>
         </div>
     </div>
 

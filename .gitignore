@@ -25,6 +25,7 @@ venv/
 env/
 ENV/
 .venv
+.pycache_tmp/
 
 # uv
 .uv/
@@ -77,4 +78,3 @@ dmypy.json
 
 # Ruff
 .ruff_cache/
-

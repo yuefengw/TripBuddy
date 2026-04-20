@@ -1,99 +1,114 @@
-"""FastAPI 应用入口
+"""FastAPI entrypoint for the TripBuddy travel agent."""
 
-主应用程序，配置路由、中间件、静态文件等
-"""
+from __future__ import annotations
+
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from contextlib import asynccontextmanager
-import os
-
-from app.config import config
 from loguru import logger
-from app.api import chat, health, file, aiops
+
+from app.api import aiops, chat, file, health
+from app.config import config
 from app.core.milvus_client import milvus_manager
 from app.skills import load_skills
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
-    # 启动时执行
+async def lifespan(_: FastAPI):
     logger.info("=" * 60)
-    logger.info(f"🚀 {config.app_name} v{config.app_version} 启动中...")
-    logger.info(f"📝 环境: {'开发' if config.debug else '生产'}")
-    logger.info(f"🌐 监听地址: http://{config.host}:{config.port}")
-    logger.info(f"📚 API 文档: http://{config.host}:{config.port}/docs")
+    logger.info(f"Starting {config.app_name} v{config.app_version}")
+    logger.info(f"Listening on http://{config.host}:{config.port}")
 
-    # 连接 Milvus
-    logger.info("🔌 正在连接 Milvus...")
-    milvus_manager.connect()
-    logger.info("✅ Milvus 连接成功")
+    try:
+        milvus_manager.connect()
+        logger.info("Milvus connected")
+    except Exception as exc:
+        logger.warning(f"Milvus connection failed, knowledge retrieval may be degraded: {exc}")
 
-    # 初始化 Skills 框架
-    logger.info("🔧 正在初始化 Skills 框架...")
     await load_skills()
-    logger.info("✅ Skills 框架初始化完成")
-
+    logger.info("Skills initialized")
     logger.info("=" * 60)
 
     yield
 
-    # 关闭时执行
-    logger.info("🔌 正在关闭 Milvus 连接...")
-    milvus_manager.close()
-    logger.info(f"👋 {config.app_name} 关闭")
+    try:
+        milvus_manager.close()
+    except Exception as exc:
+        logger.warning(f"Failed to close Milvus cleanly: {exc}")
+    logger.info(f"Stopped {config.app_name}")
 
 
-# 创建 FastAPI 应用
 app = FastAPI(
     title=config.app_name,
     version=config.app_version,
-    description="基于 LangChain 的智能oncall运维系统",
-    lifespan=lifespan
+    description="Travel planning and re-planning assistant powered by unified routing and tools",
+    lifespan=lifespan,
 )
 
-# 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应该限制具体域名
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 注册路由
-app.include_router(health.router, tags=["健康检查"])
-app.include_router(chat.router, prefix="/api", tags=["对话"])
-app.include_router(file.router, prefix="/api", tags=["文件管理"])
-app.include_router(aiops.router, prefix="/api", tags=["AIOps智能运维"])
+app.include_router(health.router, tags=["Health"])
+app.include_router(chat.router, prefix="/api", tags=["Travel Chat"])
+app.include_router(file.router, prefix="/api", tags=["Knowledge Upload"])
+app.include_router(aiops.router, prefix="/api", tags=["Legacy AIOps Demo"])
 
-# 挂载静态文件
-static_dir = "static"
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+STATIC_DIR = "static"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+def _build_index_html() -> str:
+    """Inject cache-busting asset versions into the static HTML shell."""
+
+    static_dir = Path(STATIC_DIR)
+    index_path = static_dir / "index.html"
+    html = index_path.read_text(encoding="utf-8")
+
+    asset_versions = {
+        "/static/styles.css": f"/static/styles.css?v={(static_dir / 'styles.css').stat().st_mtime_ns}",
+        "/static/app.js": f"/static/app.js?v={(static_dir / 'app.js').stat().st_mtime_ns}",
+    }
+
+    for asset_path, versioned_path in asset_versions.items():
+        html = html.replace(asset_path, versioned_path)
+
+    return html
+
 
 @app.get("/")
 async def root():
-    """返回首页"""
-    index_path = os.path.join(static_dir, "index.html")
+    """Serve the static frontend."""
+
+    index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return {
-        "message": f"Welcome to {config.app_name} API",
-        "version": config.app_version,
-        "docs": "/docs"
-    }
+        return HTMLResponse(
+            content=_build_index_html(),
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+    return {"message": f"Welcome to {config.app_name}", "version": config.app_version, "docs": "/docs"}
 
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "app.main:app",
         host=config.host,
         port=config.port,
         reload=config.debug,
-        log_level="info"
+        log_level="info",
     )

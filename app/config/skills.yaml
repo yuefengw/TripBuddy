@@ -1,11 +1,6 @@
-# 技能配置文件
-# 统一工具调用框架 - Skills 配置化封装
-
 skills:
-  # === 本地工具技能 ===
-
   - name: knowledge_retrieval
-    description: 从向量知识库中检索相关信息来回答问题
+    description: 从向量知识库检索通用旅行资料
     enabled: true
     mcp_server: null
     metadata:
@@ -13,27 +8,81 @@ skills:
       priority: high
 
   - name: time_query
-    description: 获取当前时间和日期信息
+    description: 查询当前时间
     enabled: true
     mcp_server: null
     metadata:
       category: utility
+      priority: medium
+
+  - name: travel_knowledge_skill
+    description: 旅行知识问答与攻略检索
+    enabled: true
+    mcp_server: null
+    metadata:
+      category: travel
       priority: high
 
-  # === MCP 工具技能 ===
+  - name: itinerary_builder_skill
+    description: 行程模板生成
+    enabled: true
+    mcp_server: null
+    metadata:
+      category: travel
+      priority: high
+
+  - name: budget_estimator_skill
+    description: 预算估算
+    enabled: true
+    mcp_server: null
+    metadata:
+      category: travel
+      priority: high
+
+  - name: packing_checklist_skill
+    description: 出行清单生成
+    enabled: true
+    mcp_server: null
+    metadata:
+      category: travel
+      priority: high
+
+  - name: preference_memory_skill
+    description: 偏好记忆读取
+    enabled: true
+    mcp_server: null
+    metadata:
+      category: memory
+      priority: medium
+
+  - name: trip_replan_skill
+    description: 行中重规划建议生成
+    enabled: true
+    mcp_server: null
+    metadata:
+      category: travel
+      priority: high
+
+  - name: travel_live_support
+    description: 通过 MCP 获取模拟天气、汇率、签证和 POI 信息
+    enabled: true
+    mcp_server: travel
+    metadata:
+      category: mcp
+      priority: medium
 
   - name: log_query
-    description: 日志查询服务 - 支持搜索服务日志、分析日志模式
-    enabled: true
+    description: AIOps 日志查询工具
+    enabled: false
     mcp_server: cls
     metadata:
       category: aiops
-      priority: high
+      priority: low
 
   - name: monitor_query
-    description: 监控数据服务 - 支持查询 CPU、内存、进程等指标
-    enabled: true
+    description: AIOps 监控查询工具
+    enabled: false
     mcp_server: monitor
     metadata:
       category: aiops
-      priority: high
+      priority: low

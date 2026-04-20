@@ -1,5 +1,5 @@
-"""工具类模块"""
+"""Utility exports."""
 
-from app.utils import logger  # noqa: F401
+from app.utils.logger import logger
 
 __all__ = ["logger"]
